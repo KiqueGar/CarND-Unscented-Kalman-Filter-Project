@@ -174,7 +174,7 @@ void UKF::Prediction(double delta_t) {
   MatrixXd pos_root = lambda_term*A;
   MatrixXd neg_root = -pos_root;
   Xsig.block<5,5>(0,1) = pos_root;
-  Xsig.block<5,5>(0,6) = pos_root;
+  Xsig.block<5,5>(0,6) = neg_root;
   for(int i = 0; i< 2*n_x_ +1; i++){
     Xsig.col(i)+=x_;
   }
