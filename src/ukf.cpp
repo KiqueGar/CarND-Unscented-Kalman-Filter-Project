@@ -62,7 +62,7 @@ UKF::UKF() {
   [ ] x_
   [d] P_
   [ ] Xsig_pred_
-  [d] time_us
+  [d] time_us_
   [m] std_a
   [m] sdt_yawdd_
   [s] std_laspx_
@@ -89,19 +89,11 @@ UKF::UKF() {
   n_x_ = 5;
   //augmented state size
   n_aug_ = 7;
-  //Spreading param
-  lambda = 3 - n_x_;
-  //Sensor noise
-  R_laser = MatrixXd(2,2);
-  R_laser <<  std_laspx_*std_laspx_, 0,
-              0, std_laspy_*std_laspy_;
-  R_radar = MatrixXd(3,3);
-  R_radar <<  std_radr_*std_radr_, 0, 0,
-              0, std_radphi_*std_radphi_, 0,
-              0, 0, std_radrd_*std_radrd_;
+  //Spreading param 
+  lambda_ = 3 - n_x_;
+  
 
   //Uncertainity x (0.2m on posx&posy, 0.2m/s vel, 0.1 rad in yaw&yaw_dot)
-  P_ = MatrixXd(n_x_, n_x_);
   P_ << 0.2, 0, 0, 0, 0,
         0, 0.2, 0, 0, 0,
         0, 0, 0.2, 0, 0,
@@ -124,28 +116,48 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
   Complete this function! Make sure you switch between lidar and radar
   measurements.
   */
-  if(!is_initialized_){
-    cout << "UKF: " << endl;
-    //Starting state
-    x_ = VectorXd(n_x_);
-    x_.fill(1);
-    if (measurement_pack.sensor_type_ == MeasurementPackage::Radar){
-      float ro = measurement_pack.raw_measurements_(0);
-      float phi = measurement_pack.raw_measurements_(1);
-      float ro_dot = measurement_pack.raw_measurements_(2);
-      
+  if((meas_package.sensor_type_ == MeasurementPackage::RADAR && use_radar_)||
+    (meas_package.sensor_type_ == MeasurementPackage::LASER && use_laser_)){
+    if(!is_initialized_){
+      //cout << "UKF: " << endl;
+      //Starting state
+      x_.fill(0);
+      time_us_= meas_package.timestamp_;
+      if (meas_package.sensor_type_ == MeasurementPackage::RADAR && use_radar_){
+        float ro = meas_package.raw_measurements_(0);
+        float phi = meas_package.raw_measurements_(1);
+        float ro_dot = meas_package.raw_measurements_(2);
+        x_(0) = meas_package.raw_measurements_(0)*cos(phi);
+        x_(1) = meas_package.raw_measurements_(0)*sin(phi);
+      }
+      else if (meas_package.sensor_type_ == MeasurementPackage::LASER && use_laser_){
+        x_(0) = meas_package.raw_measurements_(0);
+        x_(1) = meas_package.raw_measurements_(1);
+      }
+      //Finish Initialization
+      is_initialized_ = true;
+      return;
     }
-
-
-  }
-
-}
-
-/**
+  
+  /**
  * Predicts sigma points, the state, and the state covariance matrix.
  * @param {double} delta_t the change in time (in seconds) between the last
  * measurement and this one.
  */
+    float delta_t = (meas_package.timestamp_ - time_us_)/1000000.0;
+    time_us_ = meas_package.timestamp_;
+    Prediction(delta_t);
+
+    if (meas_package.sensor_type_==MeasurementPackage::RADAR){
+      UpdateRadar(meas_package);
+    }
+    else if (meas_package.sensor_type_==MeasurementPackage::LASER){
+      UpdateLidar(meas_package);
+    }
+  }
+}
+
+
 void UKF::Prediction(double delta_t) {
   /**
   TODO:
@@ -153,6 +165,23 @@ void UKF::Prediction(double delta_t) {
   Complete this function! Estimate the object's location. Modify the state
   vector, x_. Predict sigma points, the state, and the state covariance matrix.
   */
+  ///*** Generate Sigma Points ***///
+  //Xsig = [x, x+root((lamda+n_x)*P), x-root((lamda+n_x)*P)]
+  MatrixXd Xsig = MatrixXd (n_x_, 2*n_x_ +1);
+  Xsig.fill(0);
+  MatrixXd A = P_.llt().matrixL();
+  double lambda_term = pow(lambda_+n_x_,0.5);
+  MatrixXd pos_root = lambda_term*A;
+  MatrixXd neg_root = -pos_root;
+  Xsig.block<5,5>(0,1) = pos_root;
+  Xsig.block<5,5>(0,6) = pos_root;
+  for(int i = 0; i< 2*n_x_ +1; i++){
+    Xsig.col(i)+=x_;
+  }
+  ///*** Augment Sigma Points ***///
+  ///*** Estimate sigma points ***///
+  ///*** convert Sigma Points to mean and covariance ***///
+
 }
 
 /**
@@ -167,6 +196,16 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
   position. Modify the state vector, x_, and covariance, P_.
 
   You'll also need to calculate the lidar NIS.
+  */
+  //Sensor noise (Move)
+  /*
+  R_laser = MatrixXd(2,2);
+  R_laser <<  std_laspx_*std_laspx_, 0,
+              0, std_laspy_*std_laspy_;
+  R_radar = MatrixXd(3,3);
+  R_radar <<  std_radr_*std_radr_, 0, 0,
+              0, std_radphi_*std_radphi_, 0,
+              0, 0, std_radrd_*std_radrd_;
   */
 }
 
