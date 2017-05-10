@@ -179,7 +179,65 @@ void UKF::Prediction(double delta_t) {
     Xsig.col(i)+=x_;
   }
   ///*** Augment Sigma Points ***///
+  //Augmented state
+  VectorXd x_aug= VectorXd(n_aug_);
+  x_aug.fill(0);
+  x_aug.head(5)=x_;
+  //Augmented covariance
+  MatrixXd P_aug = MatrixXd(n_aug_, n_aug_);
+  P_aug.fill(0);
+  P_aug.topLeftCorner(5,5)=P_;
+  P_aug.bottomRightCorner(2,2) << std_a_*std_a_, 0,
+                                  0, std_yawdd_*std_yawdd_;
+  lambda_ = 3- n_aug_;
+
+  //Matrix augmented points
+  MatrixXd Xsig_aug = MatrixXd(n_aug_, 2*n_aug_ +1);
+  Xsig_aug.fill(0);
+  lambda_term = pow(lambda_+n_aug_,0.5);
+  MatrixXd A_aug = P_aug.llt().matrixL();
+  MatrixXd pos_root_aug = lambda_term*A_aug;
+  MatrixXd neg_root_aug = - pos_root_aug;
+  Xsig_aug.block<7,7>(0,1) = pos_root_aug;
+  Xsig_aug.block<7,7>(0,8) = neg_root_aug;
+  for (int i= 0; i< 2*n_aug_ +1; i++){
+    Xsig_aug.col(i)+=x_aug;
+  }
   ///*** Estimate sigma points ***///
+  //New state x = differential*delta_t + process noise
+  /*differential =  (v/yaw_dot)(sin(yaw+yaw_dot*delta_t)-sin(yaw))
+                    (v/yaw_dot)(-cos(yaw+yaw_dot*delta_t)+cos(yaw))
+                    0
+                    yaw_dot*delta_t
+                    0
+  process noise = 0.5(delta_t^2)cos(yaw)*nu_a
+                  0.5(delta_t^2)sin(yaw)*nu_a
+                  delta_t*nu_a
+                  0.5(delta_t^2)nu_yawdd
+                  delta_t*nu_yawdd
+  */
+  for(int i = 0; i< 1+ (2*n_aug_); i++){
+    double px = Xsig_aug(0,i);
+    double py = Xsig_aug(1,i);
+    double v = Xsig_aug(2,i);
+    double yaw = Xsig_aug(3,i);
+    double yaw_dot = Xsig_aug(4,i);
+    double nu_a = Xsig_aug(5,i);
+    double nu_yawdd = Xsig_aug(6,i);
+
+    float px_p, py_p, v_p, yaw_p, yaw_dot_p;
+
+    //Avoid cero division
+    if(fabs(yaw_dot)<.001){
+      px_p = px + v*cos(yaw)*delta_t;
+      py_p = py + v*sin(yaw)*delta_t;
+      yaw_p = yaw;
+    }
+    else{
+      
+    }
+
+  }
   ///*** convert Sigma Points to mean and covariance ***///
 
 }
