@@ -59,9 +59,9 @@ UKF::UKF() {
   [d] is_initialized_
   [s] use_laser_
   [s] use_radar_
-  [ ] x_
+  [c] x_
   [d] P_
-  [ ] Xsig_pred_
+  [c] Xsig_pred
   [d] time_us_
   [m] std_a
   [m] sdt_yawdd_
@@ -70,7 +70,7 @@ UKF::UKF() {
   [s] std_radr_
   [s] std_radphi_
   [s] std_radrd_
-  [ ] weights
+  [c] weights
   [d] n_x_
   [d] n_aug_
   [d] lambda_
@@ -216,6 +216,7 @@ void UKF::Prediction(double delta_t) {
                   0.5(delta_t^2)nu_yawdd
                   delta_t*nu_yawdd
   */
+  MatrixXd Xsig_pred = MatrixXd(n_x_, 2*n_aug_+1);
   for(int i = 0; i< 1+ (2*n_aug_); i++){
     double px = Xsig_aug(0,i);
     double py = Xsig_aug(1,i);
@@ -234,12 +235,60 @@ void UKF::Prediction(double delta_t) {
       yaw_p = yaw;
     }
     else{
-      
+      float cte_a = v/yaw_dot;
+      px_p= px + cte_a*(sin(yaw+ yaw_dot*delta_t) - sin(yaw));
+      py_p = py + cte_a*(-cos(yaw + yaw_dot*delta_t) + cos(yaw));
+      yaw_p = yaw + yaw_dot*delta_t;
     }
+    v_p = v;
+    yaw_dot_p = yaw_dot;
+
+    //Add noise
+    float delta_sq=delta_t*delta_t/2;
+    px_p += delta_sq*cos(yaw)*nu_a;
+    py_p += delta_sq*sin(yaw)*nu_a;
+    v_p += delta_t*nu_a;
+    yaw_p += delta_sq*nu_yawdd;
+    yaw_dot_p += delta_t*nu_yawdd;
+
+    Xsig_pred(0,i) = px_p;
+    Xsig_pred(1,i) = py_p;
+    Xsig_pred(2,i) = v_p;
+    Xsig_pred(3,i) = yaw_p;
+    Xsig_pred(4,i) = yaw_dot_p;
 
   }
   ///*** convert Sigma Points to mean and covariance ***///
+  /*
+  w(i)=(0.5)/(lamda + n_aug_point(i))
+  w(1)=lambda/(lamda + n_aug_point(i))
+  next state x = SUM(w(i)*X(i)), i:1..n_aug_point(i)
+  next P = SUM(w(i)*(X_pred-x)*(X_pred-x)^T)
+  */
+  //Set weights
+  VectorXd weights = VectorXd(2*n_aug_+1);
+  for(int i =1; i<2*n_aug_ +1; i++){
+    weights(i)=0.5/(lambda_+n_aug_);
+  }
+  weights(0)=lambda_/(lambda_+n_aug_);
 
+  //Predict state mean
+  x_.fill(0);
+  for(int i = 0; i<2*n_aug_ +1; i++){
+    x_ += weights(i)*Xsig_pred.col(i);
+  }
+  //Predict covariance
+  P_.fill(0);
+  for (int i = 0; i< 2*n_aug_+1; i++){
+    VectorXd x_diff = Xsig_pred.col(i) - x_;
+    //Yaw normalization
+    while (x_diff(3)> M_PI) x_diff(3)-=2.*M_PI;
+    while (x_diff(3)<-M_PI) x_diff(3)+=2.*M_PI;
+    //Yaw_dot normalization
+    while (x_diff(4)> M_PI) x_diff(4)-=2.*M_PI;
+    while (x_diff(4)<-M_PI) x_diff(4)+=2.*M_PI;
+    P_ += weights(i)*x_diff*x_diff.transpose();
+  }
 }
 
 /**
