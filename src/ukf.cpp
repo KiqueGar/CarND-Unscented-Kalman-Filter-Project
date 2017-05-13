@@ -94,7 +94,7 @@ UKF::UKF() {
   lambda_ = 3 - n_x_;
   Xsig_pred_ = MatrixXd(n_x_, 2*n_aug_ +1);
   weights_ = VectorXd(2*n_aug_ +1);
-  debugg_=true;
+  debugg_=false;
 
 }
 
@@ -147,11 +147,14 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
  */
     float delta_t = (meas_package.timestamp_ - time_us_)/1000000.0;
     time_us_ = meas_package.timestamp_;
-    std::cout << "time:" <<  meas_package.timestamp_ << endl;
-    std::cout << "Delta:" <<  delta_t << endl;
-    std::cout << "Sensor:" <<  meas_package.sensor_type_ << endl;
-    std::cout << "Actual state:" << endl << x_ << endl;
-    std::cout << "Actual covariance:" << endl << P_ << endl;
+    if(debugg_){
+      std::cout << "time:" <<  meas_package.timestamp_ << endl;
+      std::cout << "Delta:" <<  delta_t << endl;
+      std::cout << "Sensor:" <<  meas_package.sensor_type_ << endl;
+      std::cout << "Actual state:" << endl << x_ << endl;
+      std::cout << "Actual covariance:" << endl << P_ << endl;
+    }
+    
     Prediction(delta_t);
 
     if (meas_package.sensor_type_==MeasurementPackage::RADAR){
@@ -178,11 +181,6 @@ void UKF::Prediction(double delta_t) {
   MatrixXd A = P_.llt().matrixL();
   lambda_ = 3 - n_x_;
   float lambda_term = sqrt(lambda_ + n_x_);
-  //std::cout<< "### PREDICTION STEP ###: " << endl;
-  //std::cout<< "lambda_: " << lambda_ << endl;
-  //std::cout<< "lambda term: " << lambda_ << "  " << lambda_term << endl;
-  //std::cout<< "P_: "<< endl << P_ << endl;
-  //std::cout<< "P_root: " << endl << A << endl;
   MatrixXd pos_root = lambda_term*A;
   MatrixXd neg_root = -pos_root;
   Xsig.block<5,5>(0,1) = pos_root;
@@ -190,7 +188,6 @@ void UKF::Prediction(double delta_t) {
   for(int i = 0; i< 2*n_x_ +1; i++){
     Xsig.col(i)+=x_;
   }
-  //std::cout<< "Sigma points: " << endl << Xsig << endl;
   ///*** Augment Sigma Points ***///
   //Augmented state
   VectorXd x_aug= VectorXd(n_aug_);
@@ -202,9 +199,6 @@ void UKF::Prediction(double delta_t) {
   P_aug.topLeftCorner(5,5)=P_;
   P_aug.bottomRightCorner(2,2) << std_a_*std_a_, 0,
                                   0, std_yawdd_*std_yawdd_;
-  //std::cout<< "### AUGMENTED STATE ###" << endl;
-  //std::cout<< "x_aug: " << endl << x_aug << endl;
-  //std::cout<< "P_aug: " << endl << P_aug << endl;
   lambda_ = 3- n_aug_;
 
   //Matrix augmented points
@@ -212,8 +206,6 @@ void UKF::Prediction(double delta_t) {
   Xsig_aug.fill(0);
   lambda_term = sqrt(lambda_+n_aug_);
   MatrixXd A_aug = P_aug.llt().matrixL();
-  //std::cout<< "lambda_term augmented: " << lambda_ << "  " << lambda_term << endl;
-  //std::cout<< "A_aug: " << endl << A_aug << endl;
   MatrixXd pos_root_aug = lambda_term*A_aug;
   MatrixXd neg_root_aug = - pos_root_aug;
   Xsig_aug.block<7,7>(0,1) = pos_root_aug;
@@ -221,8 +213,6 @@ void UKF::Prediction(double delta_t) {
   for (int i= 0; i< 2*n_aug_ +1; i++){
     Xsig_aug.col(i)+=x_aug;
   }
-  //std::cout<< "Xsig_aug: " << endl << Xsig_aug << endl;
-  //std::cout<< "Xsig_aug: " << Xsig_aug << endl;
   ///*** Estimate sigma points ***///
   //New state x = differential*delta_t + process noise
   /*differential =  (v/yaw_dot)(sin(yaw+yaw_dot*delta_t)-sin(yaw))
@@ -236,7 +226,6 @@ void UKF::Prediction(double delta_t) {
                   0.5(delta_t^2)nu_yawdd
                   delta_t*nu_yawdd
   */
-//  MatrixXd Xsig_pred = MatrixXd(n_x_, 2*n_aug_+1);
   for(int i = 0; i< 1+ (2*n_aug_); i++){
     double px = Xsig_aug(0,i);
     double py = Xsig_aug(1,i);
@@ -252,15 +241,14 @@ void UKF::Prediction(double delta_t) {
     if(fabs(yaw_dot)<.001){
       px_p = px + v*cos(yaw)*delta_t;
       py_p = py + v*sin(yaw)*delta_t;
-      //yaw_p = yaw;
+      yaw_p = yaw;
     }
     else{
       float cte_a = v/yaw_dot;
       px_p= px + cte_a*(sin(yaw+ yaw_dot*delta_t) - sin(yaw));
       py_p = py + cte_a*(-cos(yaw + yaw_dot*delta_t) + cos(yaw));
-      //yaw_p = yaw + yaw_dot*delta_t;
+      yaw_p = yaw + yaw_dot*delta_t;
     }
-    yaw_p = yaw + yaw_dot*delta_t;
     v_p = v;
     yaw_dot_p = yaw_dot;
 
@@ -279,7 +267,6 @@ void UKF::Prediction(double delta_t) {
     Xsig_pred_(4,i) = yaw_dot_p;
 
   }
-  //std::cout<< "Xsig_pred: " << endl << Xsig_pred_ << endl;
   ///*** convert Sigma Points to mean and covariance ***///
   /*
   w(i)=(0.5)/(lamda + n_aug_point(i))
@@ -288,44 +275,32 @@ void UKF::Prediction(double delta_t) {
   next P = SUM(w(i)*(X_pred-x)*(X_pred-x)^T)
   */
   //Set weights
-  //VectorXd weights = VectorXd(2*n_aug_+1);
   for(int i =1; i<2*n_aug_ +1; i++){
     weights_(i)=0.5/(lambda_+n_aug_);
   }
   weights_(0)=lambda_/(lambda_+n_aug_);
-  //std::cout<< "weights_: " << weights_ << endl;
 
   //Predict state mean
-  //std::cout<< "x_ original: " << x_ << endl;
   x_.fill(0);
   for(int i = 0; i<2*n_aug_ +1; i++){
     x_ += weights_(i)*Xsig_pred_.col(i);
   }
-  //std::cout << "    Predicted state mean" << endl;
-  //std::cout<< "x_ predicted: " << x_ << endl;
   //Predict covariance
   P_.fill(0);
   for (int i = 0; i< 2*n_aug_+1; i++){
     VectorXd x_diff = Xsig_pred_.col(i) - x_;
-    //std::cout << "      Using diff= " << endl << x_diff << endl;
     //Yaw normalization
-    //std::cout << "      Normalizing Yaw" << endl;
-    while (x_diff(3)> M_PI){
-      //std::cout << "      Original:" << x_diff(3) << endl;
-      x_diff(3)-=2.*M_PI;
-      //std::cout << "      Normalizing:" << x_diff(3) << endl;
-    } 
+    while (x_diff(3)> M_PI) x_diff(3)-=2.*M_PI;
     while (x_diff(3)<-M_PI) x_diff(3)+=2.*M_PI;
     //Yaw_dot normalization
-    //std::cout << "      Normalizing Yaw_dot" << endl;
     while (x_diff(4)> M_PI) x_diff(4)-=2.*M_PI;
     while (x_diff(4)<-M_PI) x_diff(4)+=2.*M_PI;
     P_ += weights_(i)*x_diff*x_diff.transpose();
-    //std::cout << "      Updated P culumn(" << i << ")" << endl;
-    //std::cout << "      x_diff_normalized: " << endl << x_diff << endl;
   }
-  std::cout << "Predicted state covariance" << endl;
-  std::cout << P_ << endl;
+  if(debugg_){
+    std::cout << "Predicted state covariance" << endl;
+    std::cout << P_ << endl;
+  }
 }
 
 /**
@@ -365,7 +340,7 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
   You'll also need to calculate the radar NIS.
   */
   ///***Augmented points to sensor space***///
-  std::cout << "Updating via RADAR" << endl;
+  if(debugg_) std::cout << "Updating via RADAR" << endl;
   int n_z = 3;
   VectorXd z = meas_package.raw_measurements_;
   MatrixXd Zsig = MatrixXd(n_z, 2*n_aug_ +1);
@@ -391,7 +366,7 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
     Zsig(1,i) = atan2(py,px);
     Zsig(2,i) = (v*px*cos(yaw) + v*py*sin(yaw))/Zsig(0,i);
   }
-  std::cout << "Zsigma generated" << endl;
+  if(debugg_) std::cout << "Zsigma generated" << endl;
   //Calculate mean predicted measurement
   for(int i=0; i< 2*n_aug_ +1; i++){
     z_pred += weights_(i)*Zsig.col(i);
@@ -412,14 +387,14 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
     S+=weights_(i)*diff*diff.transpose();
   }
   S += R;
-  std::cout << "Predicted covariance and mean in Z" << endl;
+  if(debugg_) std::cout << "Predicted covariance and mean in Z" << endl;
   
   ///***State Update***//
   
   MatrixXd Tc = MatrixXd(n_x_, n_z);
   Tc.fill(0);
   
-  std::cout << "Updating state..." << endl;
+  if(debugg_) std::cout << "Updating state..." << endl;
   for(int i =0; i<2*n_aug_ +1; i++){
     VectorXd diff_x = Xsig_pred_.col(i) - x_;
     //angle normalization
@@ -431,22 +406,15 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
     while (diff_z(1)<-M_PI) diff_z(1) += 2.*M_PI;
     Tc += weights_(i)*diff_x*diff_z.transpose();
   }
-  std::cout << "    Tc created" << endl;
+  if(debugg_) std::cout << "    Tc created" << endl;
   MatrixXd K = Tc*S.inverse();
-  std::cout << "    K created" << endl;
+  if(debugg_) std::cout << "    K created" << endl;
   VectorXd z_diff = z - z_pred;
   //angle normalization
   while (z_diff(1)> M_PI) z_diff(1) -= 2.*M_PI;
   while (z_diff(1)<-M_PI) z_diff(1) += 2.*M_PI;
   x_ += K*z_diff;
   P_ -= K*S*K.transpose();
-  std::cout << "    State updated" << endl;
-  std::cout << "Sensor update" << endl;
-  //std::cout << "After sensor covariance:" << endl << P_ << endl;
-  //State normalization:
-  //while (x_(3)<-M_PI) x_(3)+=2.*M_PI;
-  //while (x_(3)>M_PI) x_(3)-=2.*M_PI;
-  //while (x_(4)<-M_PI) x_(4)+=2.*M_PI;
-  //while (x_(4)>M_PI) x_(4)-=2.*M_PI;
-  //std::cout << "After sensor state:" << endl << x_ << endl;
+  if(debugg_) std::cout << "    State updated" << endl;
+  if(debugg_) std::cout << "Sensor update" << endl;
 }
