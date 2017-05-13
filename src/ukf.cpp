@@ -13,7 +13,7 @@ using std::vector;
  */
 UKF::UKF() {
   // if this is false, laser measurements will be ignored (except during init)
-  use_laser_ = false;
+  use_laser_ = true;
 
   // if this is false, radar measurements will be ignored (except during init)
   use_radar_ = true;
@@ -82,7 +82,7 @@ UKF::UKF() {
   //https://www.researchgate.net/publication/223922575_Design_speeds_and_acceleration_characteristics_of_bicycle_traffic_for_use_in_planning_design_and_appraisal
   std_a_ = .355;
   //std_yawdd_ = 5.52;
-  std_yawdd_ = 4;
+  std_yawdd_ = 1.5;
   is_initialized_ = false;
   //elapsed time (us)
   time_us_= 0;
@@ -168,7 +168,7 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
       UpdateRadar(meas_package);
     }
     else if (meas_package.sensor_type_==MeasurementPackage::LASER){
-      //UpdateLidar(meas_package);
+      UpdateLidar(meas_package);
     }
   }
 }
@@ -324,14 +324,47 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
 
   You'll also need to calculate the lidar NIS.
   */
-  //Sensor noise (Move)
-  /*
-  R_laser = MatrixXd(2,2);
-  R_laser <<  std_laspx_*std_laspx_, 0,
-              0, std_laspy_*std_laspy_;
+  int n_z = 2;
+  VectorXd z = meas_package.raw_measurements_;
+  MatrixXd Zsig = MatrixXd(n_z, 2*n_aug_ +1);
+  MatrixXd S = MatrixXd(n_z, n_z);
+  VectorXd z_pred = VectorXd(n_z);
+  z_pred.fill(0);
+
+  for(int i = 0; i< 2*n_aug_ +1; i++){
+    Zsig(0,i) = Xsig_pred_(0,i);
+    Zsig(1,i) = Xsig_pred_(1,i);
+    z_pred += weights_(i)*Zsig.col(i);
+  }
+
+  MatrixXd R = MatrixXd(n_z, n_z);
+  R <<  std_laspx_*std_laspx_, 0,
+        0, std_laspy_*std_laspy_;
   
+  S.fill(0);
+  for(int i = 0; i < 2*n_aug_ +1; i++){
+    // Maybe this diff can be stored, used again in Tc
+    VectorXd diff = Zsig.col(i)-z_pred;
+    S += weights_(i)*diff*diff.transpose();
+  }
+  S += R;
+
+  MatrixXd Tc = MatrixXd(n_x_, n_z);
+  Tc.fill(0);
   
-  */
+  for(int i = 0; i< 2*n_aug_ +1 ; i++){
+    VectorXd diff_x = Xsig_pred_.col(i) - x_;
+    VectorXd diff_z = Zsig.col(i) - z_pred;
+
+    Tc += weights_(i)*diff_x*diff_z.transpose();
+  }
+  MatrixXd K = Tc*S.inverse();
+  VectorXd z_diff = z - z_pred;
+  //angle normalization
+  while (z_diff(1)> M_PI) z_diff(1) -= 2.*M_PI;
+  while (z_diff(1)<-M_PI) z_diff(1) += 2.*M_PI;
+  x_ += K*z_diff;
+  P_ -= K*S*K.transpose();
 }
 
 /**
@@ -355,13 +388,7 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
   MatrixXd S = MatrixXd(n_z, n_z);
   VectorXd z_pred = VectorXd(n_z);
   z_pred.fill(0);
-/*
-  VectorXd weights = VectorXd(2*n_aug_+1);
-  for(int i =1; i<2*n_aug_ +1; i++){
-    weights(i)=0.5/(lambda_+n_aug_);
-  }
-  weights(0)=lambda_/(lambda_+n_aug_);
-  */
+
   for (int i=0; i<1 + (2*n_aug_); i++){
     //std::cout << Xsig_pred_.col(i) << endl;
     double px = Xsig_pred_(0,i);
@@ -373,16 +400,11 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
     Zsig(0,i) = sqrt(px*px + py*py);
     Zsig(1,i) = atan2(py,px);
     Zsig(2,i) = (v*px*cos(yaw) + v*py*sin(yaw))/Zsig(0,i);
-
+    //Calculate mean predicted measurement
     z_pred += weights_(i)*Zsig.col(i);
   }
   if(debugg_) std::cout << "Zsigma generated" << endl;
-  //Calculate mean predicted measurement
-  /*
-  for(int i=0; i< 2*n_aug_ +1; i++){
-    z_pred += weights_(i)*Zsig.col(i);
-  }  
-  */
+  
   ///***Predicted covariance***///
   
   MatrixXd R = MatrixXd(n_z,n_z);
@@ -410,8 +432,8 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
   for(int i =0; i<2*n_aug_ +1; i++){
     VectorXd diff_x = Xsig_pred_.col(i) - x_;
     //angle normalization
-    while (diff_x(1)> M_PI) diff_x(1) -= 2.*M_PI;
-    while (diff_x(1)<-M_PI) diff_x(1) += 2.*M_PI;
+    while (diff_x(3)> M_PI) diff_x(1) -= 2.*M_PI;
+    while (diff_x(3)<-M_PI) diff_x(1) += 2.*M_PI;
     VectorXd diff_z = Zsig.col(i) - z_pred;
     //angle normalization
     while (diff_z(1)> M_PI) diff_z(1) -= 2.*M_PI;
