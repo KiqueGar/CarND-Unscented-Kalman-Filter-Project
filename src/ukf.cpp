@@ -124,6 +124,13 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
             0, 0, 0.2, 0, 0,
             0, 0, 0, .1, 0,
             0, 0, 0, 0, .1;
+      //Set weights
+      lambda_ = 3 - n_aug_;
+      for(int i =1; i<2*n_aug_ +1; i++){
+        weights_(i)=0.5/(lambda_+n_aug_);
+      }
+      weights_(0)=lambda_/(lambda_+n_aug_);
+
       if (meas_package.sensor_type_ == MeasurementPackage::RADAR && use_radar_){
         float ro = meas_package.raw_measurements_(0);
         float phi = meas_package.raw_measurements_(1);
@@ -274,12 +281,13 @@ void UKF::Prediction(double delta_t) {
   next state x = SUM(w(i)*X(i)), i:1..n_aug_point(i)
   next P = SUM(w(i)*(X_pred-x)*(X_pred-x)^T)
   */
+  /*
   //Set weights
   for(int i =1; i<2*n_aug_ +1; i++){
     weights_(i)=0.5/(lambda_+n_aug_);
   }
   weights_(0)=lambda_/(lambda_+n_aug_);
-
+*/
   //Predict state mean
   x_.fill(0);
   for(int i = 0; i<2*n_aug_ +1; i++){
@@ -365,12 +373,16 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
     Zsig(0,i) = sqrt(px*px + py*py);
     Zsig(1,i) = atan2(py,px);
     Zsig(2,i) = (v*px*cos(yaw) + v*py*sin(yaw))/Zsig(0,i);
+
+    z_pred += weights_(i)*Zsig.col(i);
   }
   if(debugg_) std::cout << "Zsigma generated" << endl;
   //Calculate mean predicted measurement
+  /*
   for(int i=0; i< 2*n_aug_ +1; i++){
     z_pred += weights_(i)*Zsig.col(i);
   }  
+  */
   ///***Predicted covariance***///
   
   MatrixXd R = MatrixXd(n_z,n_z);
