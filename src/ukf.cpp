@@ -74,15 +74,19 @@ UKF::UKF() {
   [d] n_x_
   [d] n_aug_
   [d] lambda_
-  [ ] NIS_radar_
-  [ ] Nis_laser_
+  [c] NIS_radar_
+  [c] Nis_laser_
 
   */
-  //Typical bicycle accel
+  //Typical bicycle accel = .71 (Table 1)
   //https://www.researchgate.net/publication/223922575_Design_speeds_and_acceleration_characteristics_of_bicycle_traffic_for_use_in_planning_design_and_appraisal
   std_a_ = .355;
-  //std_yawdd_ = 5.52;
-  std_yawdd_ = 1.5;
+  //On downhill, max vel = 8.05 =v_tan
+  //yawdd = v_tan^2 / min_rad;
+  //min safe radius is 24m, according to http://www.dot.state.mn.us/bike/pdfs/manual/Chapter5.pdf
+  //assuming 30km/h (~8m/s) (Table 5.3B)
+  //yawwdd = 8.05*8.05/24 =2.7
+  std_yawdd_ = 1.35;
   is_initialized_ = false;
   //elapsed time (us)
   time_us_= 0;
@@ -324,6 +328,7 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
 
   You'll also need to calculate the lidar NIS.
   */
+  if(debugg_) std::cout << "Updating via LIDAR" << endl;
   int n_z = 2;
   VectorXd z = meas_package.raw_measurements_;
   MatrixXd Zsig = MatrixXd(n_z, 2*n_aug_ +1);
@@ -336,6 +341,8 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
     Zsig(1,i) = Xsig_pred_(1,i);
     z_pred += weights_(i)*Zsig.col(i);
   }
+  
+  if(debugg_) std::cout << "Zsigma generated" << endl;
 
   MatrixXd R = MatrixXd(n_z, n_z);
   R <<  std_laspx_*std_laspx_, 0,
@@ -349,22 +356,31 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
   }
   S += R;
 
+  if(debugg_) std::cout << "Covariance and mean in Z_aug calculated" << endl;
+
   MatrixXd Tc = MatrixXd(n_x_, n_z);
   Tc.fill(0);
   
+  if(debugg_) std::cout << "Updating state..." << endl;
+
   for(int i = 0; i< 2*n_aug_ +1 ; i++){
     VectorXd diff_x = Xsig_pred_.col(i) - x_;
     VectorXd diff_z = Zsig.col(i) - z_pred;
 
     Tc += weights_(i)*diff_x*diff_z.transpose();
   }
+  if(debugg_) std::cout << "    Tc created" << endl;
   MatrixXd K = Tc*S.inverse();
+  if(debugg_) std::cout << "    K created" << endl;
   VectorXd z_diff = z - z_pred;
   //angle normalization
   while (z_diff(1)> M_PI) z_diff(1) -= 2.*M_PI;
   while (z_diff(1)<-M_PI) z_diff(1) += 2.*M_PI;
   x_ += K*z_diff;
   P_ -= K*S*K.transpose();
+  if(debugg_) std::cout << "    State updated" << endl;
+  if(debugg_) std::cout << "Update Done" << endl << endl;
+  NIS_laser_= z_diff.transpose()*S.inverse()*z_diff;
 }
 
 /**
@@ -421,7 +437,7 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
     S+=weights_(i)*diff*diff.transpose();
   }
   S += R;
-  if(debugg_) std::cout << "Predicted covariance and mean in Z" << endl;
+  if(debugg_) std::cout << "Covariance and mean in Z_aug calculated" << endl;
   
   ///***State Update***//
   
@@ -450,5 +466,6 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
   x_ += K*z_diff;
   P_ -= K*S*K.transpose();
   if(debugg_) std::cout << "    State updated" << endl;
-  if(debugg_) std::cout << "Sensor update" << endl;
+  if(debugg_) std::cout << "Update Done" << endl << endl;
+  NIS_radar_ = z_diff.transpose()*S.inverse()*z_diff;
 }
