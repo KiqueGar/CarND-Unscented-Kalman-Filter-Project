@@ -100,6 +100,16 @@ UKF::UKF() {
   weights_ = VectorXd(2*n_aug_ +1);
   debugg_=false;
 
+  MatrixXd R_laser = MatrixXd(2, 2);
+  const R_laser <<  std_laspx_*std_laspx_, 0,
+                    0, std_laspy_*std_laspy_;
+
+  MatrixXd R = MatrixXd(3,3);
+  R <<  std_radr_*std_radr_, 0, 0,
+        0, std_radphi_*std_radphi_, 0,
+        0, 0, std_radrd_*std_radrd_;
+
+
 }
 
 UKF::~UKF() {}
@@ -354,7 +364,7 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
     VectorXd diff = Zsig.col(i)-z_pred;
     S += weights_(i)*diff*diff.transpose();
   }
-  S += R;
+  S += R_laser;
 
   if(debugg_) std::cout << "Covariance and mean in Z_aug calculated" << endl;
 
